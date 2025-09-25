@@ -6,6 +6,7 @@ using Grocery.Core.Interfaces.Services;
 using Grocery.Core.Models;
 using System.Collections.ObjectModel;
 using System.Text.Json;
+using System.Linq;
 
 namespace Grocery.App.ViewModels
 {
@@ -15,14 +16,20 @@ namespace Grocery.App.ViewModels
         private readonly IGroceryListItemsService _groceryListItemsService;
         private readonly IProductService _productService;
         private readonly IFileSaverService _fileSaverService;
-        
+        private string searchText = "";
+
         public ObservableCollection<GroceryListItem> MyGroceryListItems { get; set; } = [];
         public ObservableCollection<Product> AvailableProducts { get; set; } = [];
+        public ObservableCollection<GroceryListItem> FilteredGroceryListItems { get; set; } = [];
 
         [ObservableProperty]
         GroceryList groceryList = new(0, "None", DateOnly.MinValue, "", 0);
         [ObservableProperty]
         string myMessage;
+        [ObservableProperty]
+        string searchBarText = string.Empty;
+        [ObservableProperty]
+        string cartSearchBarText = string.Empty;
 
         public GroceryListItemsViewModel(IGroceryListItemsService groceryListItemsService, IProductService productService, IFileSaverService fileSaverService)
         {
@@ -37,14 +44,34 @@ namespace Grocery.App.ViewModels
             MyGroceryListItems.Clear();
             foreach (var item in _groceryListItemsService.GetAllOnGroceryListId(id)) MyGroceryListItems.Add(item);
             GetAvailableProducts();
+            GetFilteredGroceryListItems();
         }
 
         private void GetAvailableProducts()
         {
             AvailableProducts.Clear();
-            foreach (Product p in _productService.GetAll())
-                if (MyGroceryListItems.FirstOrDefault(g => g.ProductId == p.Id) == null  && p.Stock > 0)
-                    AvailableProducts.Add(p);
+            var filter = string.IsNullOrWhiteSpace(SearchBarText) ? string.Empty : SearchBarText.ToLower();
+
+            var filteredProducts = _productService.GetAll()
+                .Where(p =>
+                    MyGroceryListItems.FirstOrDefault(g => g.ProductId == p.Id) == null &&
+                    p.Stock > 0 &&
+                    (string.IsNullOrEmpty(filter) || p.Name.ToLower().Contains(filter)))
+                .ToList();
+
+            foreach (var p in filteredProducts)
+                AvailableProducts.Add(p);
+        }
+
+        private void GetFilteredGroceryListItems()
+        {
+            FilteredGroceryListItems.Clear();
+            var filter = string.IsNullOrWhiteSpace(CartSearchBarText) ? string.Empty : CartSearchBarText.ToLower();
+            var filteredItems = MyGroceryListItems
+                .Where(item => string.IsNullOrEmpty(filter) || (item.Product != null && item.Product.Name.ToLower().Contains(filter)))
+                .ToList();
+            foreach (var item in filteredItems)
+                FilteredGroceryListItems.Add(item);
         }
 
         partial void OnGroceryListChanged(GroceryList value)
@@ -86,5 +113,18 @@ namespace Grocery.App.ViewModels
             }
         }
 
+        [RelayCommand]
+        public void PerformSearch(string searchText)
+        {
+            SearchBarText = searchText;
+            GetAvailableProducts();
+        }
+
+        [RelayCommand]
+        public void PerformCartSearch(string searchText)
+        {
+            CartSearchBarText = searchText;
+            GetFilteredGroceryListItems();
+        }
     }
 }
